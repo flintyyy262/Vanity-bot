@@ -8,7 +8,7 @@
 const DEFAULT_TEAM_ID = "75436928-a806-406b-840e-5fdae1a7b202";
 const FACEIT = "https://open.faceit.com/data/v4";
 const CACHE_SECONDS = 600; // данные FACEIT кэшируются на 10 минут
-const VERSION = "1.3 · 15 октября";
+const VERSION = "1.4 · 15 октября";
 
 export default {
   async fetch(request, env, ctx) {
@@ -118,7 +118,7 @@ async function sendPlayer(env, chat, playerId, editId) {
   const [p, s, recent] = await Promise.all([
     faceit(env, `/players/${playerId}`),
     faceit(env, `/players/${playerId}/stats/cs2`).catch(() => null),
-    faceit(env, `/players/${playerId}/games/cs2/stats?limit=20`).catch(() => null)
+    faceit(env, `/players/${playerId}/games/cs2/stats?limit=30`).catch(() => null)
   ]);
   const text = playerCard(p, s, recent);
   const keyboard = [
@@ -235,7 +235,7 @@ async function sendHelp(env, chat, editId) {
     "",
     "<b>В карточке игрока</b>",
     "• уровень и ELO на FACEIT",
-    "• статистика за всё время и форма за 20 матчей",
+    "• статистика за всё время и форма за 30 матчей",
     "• 📋 Последние матчи — K/D/A, ADR и HS% в каждом матче",
     "",
     "Данные FACEIT обновляются раз в 10 минут.",
@@ -273,7 +273,7 @@ function playerCard(p, s, recent) {
     out.push("", "Статистика CS2 на FACEIT пока недоступна.");
   }
 
-  // Форма за последние 20 матчей, если FACEIT отдал детали
+  // Форма за последние 30 матчей, если FACEIT отдал детали
   const items = (recent?.items || []).map(i => i.stats || {}).filter(x => x["Kills"] != null);
   if (items.length >= 3) {
     const num = k => items.map(x => Number(x[k])).filter(n => !isNaN(n));
