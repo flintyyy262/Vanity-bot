@@ -86,6 +86,10 @@ async function handle(update, env) {
     if (q.data === "menu") return sendMenu(env, chat, msg);
     if (q.data === "team") return sendTeam(env, chat, msg);
     if (q.data.startsWith("p:")) return sendPlayer(env, chat, q.data.slice(2), msg);
+    if (q.data.startsWith("m:")) {
+      const [, id, off] = q.data.split(":");
+      return sendMatches(env, chat, id, Number(off) || 0, msg);
+    }
   }
 }
 
@@ -113,10 +117,74 @@ async function sendPlayer(env, chat, playerId, editId) {
   ]);
   const text = playerCard(p, s, recent);
   const keyboard = [
+    [{ text: "📋 Последние матчи", callback_data: `m:${playerId}:0` }],
     [{ text: "Профиль на FACEIT ↗", url: `https://www.faceit.com/ru/players/${encodeURIComponent(p.nickname)}` }],
     [{ text: "← Ко всем игрокам", callback_data: "menu" }]
   ];
   return reply(env, chat, text, keyboard, editId);
+}
+
+// ---------- статистика по каждому матчу ----------
+const PAGE = 10;
+
+async function sendMatches(env, chat, playerId, offset, editId) {
+  const [p, res] = await Promise.all([
+    faceit(env, `/players/${playerId}`),
+    faceit(env, `/players/${playerId}/games/cs2/stats?limit=${PAGE}&offset=${offset}`).catch(() => null)
+  ]);
+  const items = (res?.items || []).slice(0, PAGE).map(i => i.stats || {});
+  const out = [`<b>${esc(p.nickname)}</b> · матчи ${offset + 1}–${offset + items.length}`];
+
+  if (!items.length) {
+    out.push("", offset ? "Больше матчей нет." : "FACEIT не отдал статистику по матчам этого игрока.");
+  }
+
+  for (const s of items) {
+    const n = k => (s[k] != null && s[k] !== "" ? Number(s[k]) : null);
+    const win = String(s["Result"]) === "1";
+    const kills = n("Kills"), deaths = n("Deaths"), assists = n("Assists");
+    const kd = n("K/D Ratio") ?? (kills != null && deaths ? kills / deaths : null);
+    const adr = n("ADR"), hs = n("Headshots %");
+    const when = matchDate(s);
+    const map = s["Map"] ? s["Map"].replace(/^de_/, "").replace(/^./, c => c.toUpperCase()) : "Карта ?";
+    const score = s["Score"] ? String(s["Score"]).replace(/\s*\/\s*/, ":") : "";
+    const id = s["Match Id"];
+
+    const head = `${win ? "🟢" : "🔴"} <b>${esc(map)}</b>${score ? " " + esc(score) : ""}${when ? " · " + when : ""}`;
+    const kda = kills != null ? `${kills}/${deaths ?? "?"}/${assists ?? "?"}` : "—";
+    const parts = [
+      `K/D/A ${kda}`,
+      kd != null && `K/D ${kd.toFixed(2)}`,
+      adr != null && `ADR ${adr.toFixed(0)}`,
+      hs != null && `HS ${hs.toFixed(0)}%`
+    ].filter(Boolean);
+    const extra = [
+      n("Penta Kills") > 0 && `эйсов: ${n("Penta Kills")}`,
+      n("Quadro Kills") > 0 && `4k: ${n("Quadro Kills")}`,
+      n("MVPs") > 0 && `MVP: ${n("MVPs")}`
+    ].filter(Boolean);
+
+    out.push("");
+    out.push(id ? `<a href="https://www.faceit.com/ru/cs2/room/${encodeURIComponent(id)}">${head}</a>` : head);
+    out.push("    " + parts.join(" · "));
+    if (extra.length) out.push("    " + extra.join(" · "));
+  }
+
+  const nav = [];
+  if (offset > 0) nav.push({ text: "← Новее", callback_data: `m:${playerId}:${Math.max(0, offset - PAGE)}` });
+  if (items.length === PAGE) nav.push({ text: "Старее →", callback_data: `m:${playerId}:${offset + PAGE}` });
+  const keyboard = [];
+  if (nav.length) keyboard.push(nav);
+  keyboard.push([{ text: "← К игроку", callback_data: `p:${playerId}` }]);
+  return reply(env, chat, out.join("\n"), keyboard, editId);
+}
+
+function matchDate(s) {
+  const raw = s["Match Finished At"] ?? s["Updated At"] ?? s["Created At"];
+  if (raw == null) return "";
+  const d = /^\d+$/.test(String(raw)) ? new Date(Number(raw)) : new Date(raw);
+  if (isNaN(d)) return "";
+  return new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(d);
 }
 
 async function sendTeam(env, chat, editId) {
