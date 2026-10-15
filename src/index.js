@@ -8,6 +8,7 @@
 const DEFAULT_TEAM_ID = "75436928-a806-406b-840e-5fdae1a7b202";
 const FACEIT = "https://open.faceit.com/data/v4";
 const CACHE_SECONDS = 600; // данные FACEIT кэшируются на 10 минут
+const VERSION = "1.3 · 15 октября";
 
 export default {
   async fetch(request, env, ctx) {
@@ -24,7 +25,8 @@ export default {
       await tg(env, "setMyCommands", {
         commands: [
           { command: "start", description: "Выбрать игрока" },
-          { command: "team", description: "Сводка по всей команде" }
+          { command: "team", description: "Сводка по всей команде" },
+          { command: "help", description: "Что умеет бот" }
         ]
       });
       return new Response(hook.ok ? "Готово! Бот подключён. Напишите ему /start в Телеграме." : "Ошибка: " + JSON.stringify(hook), {
@@ -45,6 +47,7 @@ export default {
         `WEBHOOK_SECRET: ${env.WEBHOOK_SECRET ? "есть" : "НЕТ"}`,
         `Телеграм: ${info.ok ? "токен рабочий" : "ошибка " + info.description}`,
         `Вебхук: ${info.result?.url || "не установлен"}`,
+        `Версия бота: ${VERSION}`,
         `Сообщений в очереди: ${info.result?.pending_update_count ?? "?"}`,
         `Последняя ошибка доставки: ${info.result?.last_error_message || "нет"}`,
         `FACEIT: ${faceitCheck}`
@@ -76,6 +79,7 @@ async function handle(update, env) {
     const chat = update.message.chat.id;
     const cmd = update.message.text.split(/[\s@]/)[0];
     if (cmd === "/team") return sendTeam(env, chat);
+    if (cmd === "/help") return sendHelp(env, chat);
     return sendMenu(env, chat); // /start и любое другое сообщение
   }
 
@@ -85,6 +89,7 @@ async function handle(update, env) {
     await tg(env, "answerCallbackQuery", { callback_query_id: q.id });
     if (q.data === "menu") return sendMenu(env, chat, msg);
     if (q.data === "team") return sendTeam(env, chat, msg);
+    if (q.data === "help") return sendHelp(env, chat, msg);
     if (q.data.startsWith("p:")) return sendPlayer(env, chat, q.data.slice(2), msg);
     if (q.data.startsWith("m:")) {
       const [, id, off] = q.data.split(":");
@@ -104,8 +109,8 @@ async function sendMenu(env, chat, editId) {
   for (let i = 0; i < members.length; i += 2) {
     rows.push(members.slice(i, i + 2).map(m => ({ text: m.nickname, callback_data: "p:" + m.user_id })));
   }
-  rows.push([{ text: "📊 Вся команда", callback_data: "team" }]);
-  const text = `<b>${esc(team.name || team.nickname || "Team Vanity")}</b>\nВыберите игрока, чтобы посмотреть его статистику на FACEIT.`;
+  rows.push([{ text: "📊 Вся команда", callback_data: "team" }, { text: "❓ Помощь", callback_data: "help" }]);
+  const text = `<b>${esc(team.name || team.nickname || "Team Vanity")}</b>\nВыберите игрока, чтобы посмотреть его статистику на FACEIT.\n\n<i>Версия бота ${VERSION}</i>`;
   return reply(env, chat, text, rows, editId);
 }
 
@@ -217,6 +222,25 @@ async function sendTeam(env, chat, editId) {
     `<b>📊 ${esc(team.name || "Team Vanity")}</b>\n` +
     (avg ? `Средний ELO: <b>${Math.round(avg)}</b>\n` : "") +
     `\n${lines.join("\n\n")}`;
+  return reply(env, chat, text, [[{ text: "← Ко всем игрокам", callback_data: "menu" }]], editId);
+}
+
+async function sendHelp(env, chat, editId) {
+  const text = [
+    "<b>Что умеет бот</b>",
+    "",
+    "/start — список игроков Team Vanity",
+    "/team — сводка по всей команде, по убыванию ELO",
+    "/help — эта подсказка",
+    "",
+    "<b>В карточке игрока</b>",
+    "• уровень и ELO на FACEIT",
+    "• статистика за всё время и форма за 20 матчей",
+    "• 📋 Последние матчи — K/D/A, ADR и HS% в каждом матче",
+    "",
+    "Данные FACEIT обновляются раз в 10 минут.",
+    `<i>Версия ${VERSION}</i>`
+  ].join("\n");
   return reply(env, chat, text, [[{ text: "← Ко всем игрокам", callback_data: "menu" }]], editId);
 }
 
