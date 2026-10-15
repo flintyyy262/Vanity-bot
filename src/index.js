@@ -8,7 +8,7 @@
 const DEFAULT_TEAM_ID = "75436928-a806-406b-840e-5fdae1a7b202";
 const FACEIT = "https://open.faceit.com/data/v4";
 const CACHE_SECONDS = 600; // данные FACEIT кэшируются на 10 минут
-const VERSION = "1.6 · 15 октября";
+const VERSION = "1.7 · 15 октября";
 
 export default {
   async fetch(request, env, ctx) {
@@ -126,7 +126,7 @@ async function sendPlayer(env, chat, playerId, editId) {
     [{ text: "Профиль на FACEIT ↗", url: `https://www.faceit.com/ru/players/${encodeURIComponent(p.nickname)}` }],
     [{ text: "← Ко всем игрокам", callback_data: "menu" }]
   ];
-  return reply(env, chat, text, keyboard, editId);
+  return reply(env, chat, text, keyboard, editId, p.avatar || null);
 }
 
 // ---------- статистика по каждому матчу ----------
@@ -371,10 +371,14 @@ async function tg(env, method, payload) {
   return r.json();
 }
 
-async function reply(env, chat, text, keyboard, editId) {
+// image — ссылка на картинку: Телеграм покажет её над текстом как превью ссылки,
+// поэтому сообщение остаётся текстовым и его можно редактировать кнопками.
+async function reply(env, chat, text, keyboard, editId, image) {
   const payload = {
     chat_id: chat, text, parse_mode: "HTML",
-    disable_web_page_preview: true,
+    link_preview_options: image
+      ? { url: image, show_above_text: true, prefer_large_media: true }
+      : { is_disabled: true },
     reply_markup: { inline_keyboard: keyboard }
   };
   if (editId) {
