@@ -8,7 +8,7 @@
 const DEFAULT_TEAM_ID = "75436928-a806-406b-840e-5fdae1a7b202";
 const FACEIT = "https://open.faceit.com/data/v4";
 const CACHE_SECONDS = 600; // данные FACEIT кэшируются на 10 минут
-const VERSION = "1.4 · 15 октября";
+const VERSION = "1.5 · 15 октября";
 
 export default {
   async fetch(request, env, ctx) {
@@ -118,7 +118,7 @@ async function sendPlayer(env, chat, playerId, editId) {
   const [p, s, recent] = await Promise.all([
     faceit(env, `/players/${playerId}`),
     faceit(env, `/players/${playerId}/stats/cs2`).catch(() => null),
-    faceit(env, `/players/${playerId}/games/cs2/stats?limit=30`).catch(() => null)
+    faceit(env, `/players/${playerId}/games/cs2/stats?limit=${FORM_WINDOW}`).catch(() => null)
   ]);
   const text = playerCard(p, s, recent);
   const keyboard = [
@@ -236,6 +236,7 @@ async function sendHelp(env, chat, editId) {
     "<b>В карточке игрока</b>",
     "• уровень и ELO на FACEIT",
     "• статистика за всё время и форма за 30 матчей",
+    "• 🎯 сколько убийств нужно в следующей игре, чтобы удержать или поднять среднее",
     "• 📋 Последние матчи — K/D/A, ADR и HS% в каждом матче",
     "",
     "Данные FACEIT обновляются раз в 10 минут.",
@@ -295,9 +296,38 @@ function playerCard(p, s, recent) {
     for (const x of items) if (x["Map"]) maps[x["Map"]] = (maps[x["Map"]] || 0) + 1;
     const top = Object.entries(maps).sort((a, b) => b[1] - a[1])[0];
     if (top) out.push(`Чаще всего играет: ${esc(top[0].replace(/^de_/, "").replace(/^./, c => c.toUpperCase()))} (${top[1]})`);
+
+    const goal = killsGoal(items.map(x => Number(x["Kills"]) || 0));
+    if (goal) {
+      out.push("");
+      out.push("<b>🎯 Цель на следующую игру</b>");
+      out.push(`Удержать ${goal.shown.toFixed(1)} убийств в среднем: <b>${goal.keep}+</b>`);
+      out.push(`Поднять до ${goal.upShown.toFixed(1)}: <b>${goal.up}+</b>`);
+      if (goal.drop != null) out.push(`<i>Из окна ${FORM_WINDOW} матчей выпадет игра с ${goal.drop} убийствами</i>`);
+    }
   }
 
   return out.join("\n");
+}
+
+// Сколько убийств нужно в следующей игре, чтобы среднее за окно не упало и чтобы выросло.
+// Матчи идут от новых к старым. Если окно заполнено, самый старый матч выпадает.
+const FORM_WINDOW = 30;
+export function killsGoal(kills) {
+  if (kills.length < 3) return null;
+  const win = kills.slice(0, FORM_WINDOW);
+  const full = win.length === FORM_WINDOW;
+  const drop = full ? win[win.length - 1] : null;
+  const rest = win.reduce((a, b) => a + b, 0) - (drop ?? 0); // что останется в окне
+  const n = full ? FORM_WINDOW : win.length + 1;            // размер окна после игры
+  const avg = win.reduce((a, b) => a + b, 0) / win.length;
+  const shown = Math.round(avg * 10) / 10;                  // как среднее показано в карточке
+  // минимум убийств, чтобы показанное среднее стало не меньше target
+  const need = target => Math.max(0, Math.ceil((target - 0.05) * n - rest - 1e-9));
+  const keep = need(shown);
+  const upShown = Math.round((shown + 0.1) * 10) / 10;
+  const up = need(upShown);
+  return { shown, keep, up, upShown, drop };
 }
 
 const levelBadge = lvl => (lvl >= 10 ? "🔴" : lvl >= 8 ? "🟠" : lvl >= 4 ? "🟡" : lvl >= 2 ? "🟢" : "⚪");
