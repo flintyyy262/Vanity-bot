@@ -8,7 +8,7 @@
 const DEFAULT_TEAM_ID = "75436928-a806-406b-840e-5fdae1a7b202";
 const FACEIT = "https://open.faceit.com/data/v4";
 const CACHE_SECONDS = 600; // данные FACEIT кэшируются на 10 минут
-const VERSION = "1.5 · 15 октября";
+const VERSION = "1.6 · 15 октября";
 
 export default {
   async fetch(request, env, ctx) {
@@ -286,7 +286,7 @@ function playerCard(p, s, recent) {
     out.push(`<b>Форма: последние ${items.length} матчей</b>`);
     out.push(`Побед: ${Math.round(wins / items.length * 100)}% · K/D: ${kd != null ? kd.toFixed(2) : "—"}`);
     const extra = [
-      avg(kills) != null && `Убийств за матч: ${avg(kills).toFixed(1)}`,
+      avg(kills) != null && `Avg kills: <b>${Math.round(avg(kills))}</b>`,
       avg(adr) != null && `ADR: ${avg(adr).toFixed(0)}`,
       avg(hs) != null && `HS: ${avg(hs).toFixed(0)}%`
     ].filter(Boolean);
@@ -301,8 +301,8 @@ function playerCard(p, s, recent) {
     if (goal) {
       out.push("");
       out.push("<b>🎯 Цель на следующую игру</b>");
-      out.push(`Удержать ${goal.shown.toFixed(1)} убийств в среднем: <b>${goal.keep}+</b>`);
-      out.push(`Поднять до ${goal.upShown.toFixed(1)}: <b>${goal.up}+</b>`);
+      out.push(`Удержать avg ${goal.shown}: <b>${goal.keep}+</b> убийств`);
+      out.push(`Поднять avg до ${goal.upShown}: <b>${goal.up}+</b> убийств`);
       if (goal.drop != null) out.push(`<i>Из окна ${FORM_WINDOW} матчей выпадет игра с ${goal.drop} убийствами</i>`);
     }
   }
@@ -321,11 +321,11 @@ export function killsGoal(kills) {
   const rest = win.reduce((a, b) => a + b, 0) - (drop ?? 0); // что останется в окне
   const n = full ? FORM_WINDOW : win.length + 1;            // размер окна после игры
   const avg = win.reduce((a, b) => a + b, 0) / win.length;
-  const shown = Math.round(avg * 10) / 10;                  // как среднее показано в карточке
-  // минимум убийств, чтобы показанное среднее стало не меньше target
-  const need = target => Math.max(0, Math.ceil((target - 0.05) * n - rest - 1e-9));
+  const shown = Math.round(avg);                            // среднее округляется до целого: 19.4 → 19, 19.6 → 20
+  // минимум убийств, чтобы округлённое среднее стало не меньше target
+  const need = target => Math.max(0, Math.ceil((target - 0.5) * n - rest - 1e-9));
   const keep = need(shown);
-  const upShown = Math.round((shown + 0.1) * 10) / 10;
+  const upShown = shown + 1;
   const up = need(upShown);
   return { shown, keep, up, upShown, drop };
 }
