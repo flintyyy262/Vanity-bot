@@ -32,13 +32,37 @@ export default {
       });
     }
 
+    // Диагностика: /status?secret=WEBHOOK_SECRET
+    if (url.pathname === "/status") {
+      if (url.searchParams.get("secret") !== env.WEBHOOK_SECRET) return new Response("Неверный secret", { status: 403 });
+      const info = await tg(env, "getWebhookInfo", {});
+      let faceitCheck;
+      try { const t = await faceit(env, `/teams/${env.TEAM_ID || DEFAULT_TEAM_ID}`); faceitCheck = `ок, команда «${t.name}», игроков: ${(t.members || []).length}`; }
+      catch (e) { faceitCheck = e.message; }
+      const lines = [
+        `BOT_TOKEN: ${env.BOT_TOKEN ? "есть" : "НЕТ"}`,
+        `FACEIT_KEY: ${env.FACEIT_KEY ? "есть" : "НЕТ"}`,
+        `WEBHOOK_SECRET: ${env.WEBHOOK_SECRET ? "есть" : "НЕТ"}`,
+        `Телеграм: ${info.ok ? "токен рабочий" : "ошибка " + info.description}`,
+        `Вебхук: ${info.result?.url || "не установлен"}`,
+        `Сообщений в очереди: ${info.result?.pending_update_count ?? "?"}`,
+        `Последняя ошибка доставки: ${info.result?.last_error_message || "нет"}`,
+        `FACEIT: ${faceitCheck}`
+      ];
+      return new Response(lines.join("\n"), { headers: { "content-type": "text/plain; charset=utf-8" } });
+    }
+
     if (url.pathname === "/webhook" && request.method === "POST") {
       if (request.headers.get("X-Telegram-Bot-Api-Secret-Token") !== env.WEBHOOK_SECRET) {
         return new Response("forbidden", { status: 403 });
       }
       const update = await request.json();
       // Отвечаем Телеграму сразу, работу доделываем в фоне
-      ctx.waitUntil(handle(update, env).catch(e => console.error(e)));
+      ctx.waitUntil(handle(update, env).catch(async e => {
+        console.error(e);
+        const chat = update.message?.chat?.id ?? update.callback_query?.message?.chat?.id;
+        if (chat) await tg(env, "sendMessage", { chat_id: chat, text: "⚠️ Ошибка: " + e.message });
+      }));
       return new Response("ok");
     }
 
@@ -203,7 +227,12 @@ async function faceit(env, path) {
     if (hit) return hit.json();
   }
   const r = await fetch(url, { headers: { Authorization: `Bearer ${env.FACEIT_KEY}` } });
-  if (!r.ok) throw new Error(`FACEIT ${r.status} ${path}`);
+  if (!r.ok) {
+    const hint = r.status === 401 || r.status === 403
+      ? " — ключ FACEIT не подошёл: проверьте FACEIT_KEY (нужен тип Server-side)"
+      : r.status === 404 ? " — не найдено на FACEIT (проверьте TEAM_ID)" : "";
+    throw new Error(`FACEIT ответил ${r.status}${hint}`);
+  }
   const body = await r.text();
   if (cache) {
     await cache.put(key, new Response(body, { headers: { "content-type": "application/json", "cache-control": `max-age=${CACHE_SECONDS}` } }));
